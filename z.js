@@ -1,6 +1,7 @@
 var connect = require('connect');
 var express = require('express');
 var io = require('socket.io');
+var sio = require('socket.io-sessions');
 var sys = require('sys');
 var twitter = require('./lib/vendor/twitter');
 var url = require('url');
