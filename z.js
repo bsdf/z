@@ -329,7 +329,7 @@ function z_engine_streaming_handler(tw, client, session)
 	{
 		if(tw)
 		{
-			z_engine_message_handler(this_session, client, message, tw);
+			z_engine_message_handler(session, client, message, tw);
 		}
 	});
 }
