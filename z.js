@@ -177,7 +177,7 @@ socket.on('sconnection', function(client, session)
 	}
 });
 
-ssocket.on('sinvalid', function(client)
+socket.on('sinvalid', function(client)
 {
 	console.error('Client connected with an invalid session id, ignoring');
 });
