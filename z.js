@@ -1,9 +1,13 @@
 var express = require('express');
+var gzip = require('connect-gzip');
 var io = require('socket.io');
 var sio = require('socket.io-sessions');
 var sys = require('sys');
 var twitter = require('./lib/vendor/twitter');
-var url = require('url');
+
+/*
+ * start configuration
+ */
 
 var key = "c52uegTrRkDob3kRuw"; //consumer key
 var secret = "Vxp5DUSZSM9LSpzNUAUXcH6eWImk4B2eV4Ookt7ak"; //consumer secret
@@ -16,15 +20,17 @@ var storage_fingerprint = "";
 var storage_secret = "sekkkret!!!!";
 
 var supported_transports = [
+	'htmlfile',
 	'websocket',
 	'xhr-multipart',
 	'xhr-polling'
 ];
 
-var use_gzip = true;
+/*
+ * end configuration
+ */
 
 var server = module.exports = express.createServer();
-
 var storage = new express.session.MemoryStore();
 var socket = sio.enable(
 {
@@ -79,9 +85,6 @@ server.get('/',function(req, res)
 	{
 		res.render('home.jade',
 		{
-			locals: { 
-				timestamp: (new Date()).getTime()
-			},
 			title: 'hello @'+req.session.oauth._results.screen_name+'!'
 		});
 	}
@@ -151,33 +154,24 @@ if (!module.parent)
 	console.log('Express server listening on port '+server.address().port);
 }
 
-if (use_gzip)
-{
-	var gzip = require('connect-gzip');
-	gzip.gzip({matchType: /css/});
-	gzip.gzip({matchType: /js/});
-}
+gzip.gzip({matchType: /css/});
+gzip.gzip({matchType: /js/});
+
+socket.tid2clt = {};
 
 /*
  * the socket connection event which gets the gears started
  */
 socket.on('sconnection', function(client, session)
 {
-	if (typeof(session) === "undefined")
+	try
 	{
-		console.log("User connected to socket.io without any oauth info, ignoring");
+		var tw = new twitter(key, secret, session.oauth);
+		z_engine_streaming_handler(tw, client, session);
 	}
-	else
+	catch(e)
 	{
-		try
-		{
-			var tw = new twitter(key, secret, session.oauth);
-			z_engine_streaming_handler(tw, client, session);
-		}
-		catch(e)
-		{
-			console.error('ERROR: ' + e);
-		}
+		console.error('ERROR: ' + e);
 	}
 });
 
@@ -289,7 +283,7 @@ function z_engine_message_handler(this_session, client, message, tw)
 }
 
 /*
- *
+ * start and handle the userstream
  */
 function z_engine_streaming_handler(tw, client, session)
 {
@@ -303,31 +297,42 @@ function z_engine_streaming_handler(tw, client, session)
 	}});
 	setTimeout(function()
 	{
-		var stream = tw.openUserStream({include_entities: true});
-		stream.setMaxListeners(0); //dont do this
-		stream.on('data', function(data)
+		if(tw)
 		{
 			try
 			{
-				client.send(data);
+				socket.tid2clt[tw._results.user_id] = client;
 			}
 			catch(e)
 			{
-				console.error('dispatch event ERROR: ' + data);
+				console.error('socket.tid2sid ERROR: ' + sys.inspect(e));
 			}
-		});
-		stream.on('error', function(data)
-		{
-			console.error('UserStream ERROR: ' + data);
-		});
-		stream.on('end', function()
-		{
-			console.log('UserStream ends successfully');
-		});
-		client.on('disconnect', function()
-		{
-			stream.end();
-		});
+			var stream = tw.openUserStream({include_entities: true});
+			stream.setMaxListeners(0); //dont do this
+			stream.on('data', function(data)
+			{
+				try
+				{
+					client.send(data);
+				}
+				catch(e)
+				{
+					console.error('dispatch event ERROR: ' + sys.inspect(e));
+				}
+			});
+			stream.on('error', function(data)
+			{
+				console.error('UserStream ERROR: ' + data);
+			});
+			stream.on('end', function()
+			{
+				console.log('UserStream ends successfully');
+			});
+			client.on('disconnect', function()
+			{
+				stream.end();
+			});
+		}
 	},5000);
 	client.on('message', function(message)
 	{
@@ -353,17 +358,16 @@ function z_engine_static_timeline_fetch(this_session, tw, client, params, json)
 			}
 			else
 			{
-				var out = data.reverse();
 				switch (json)
 				{
 					case 'home':
-						client.send(out);
+						client.send(data.reverse());
 					break;
 					case 'mentions':
-						client.send({mentions: out});
+						client.send({mentions: data});
 					break;
 					case 'retweets':
-						client.send({retweets: out});
+						client.send({retweets: data.reverse()});
 					break;
 				}
 			}
